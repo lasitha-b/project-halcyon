@@ -28,6 +28,12 @@ source "vmware-iso" "win11" {
   communicator     = "winrm"
   winrm_username   = "vagrant"
   winrm_password   = "vagrant"
+  # NOTE: vmnet8's dhcpd must reserve this IP for the fixed MAC in vmx_data
+  # below, or winrm_host won't be reachable. Add to
+  # /etc/vmware/vmnet8/dhcpd/dhcpd.conf:
+  #   host halcyon-win11 { hardware ethernet 00:50:56:20:11:99;
+  #                        fixed-address 172.16.109.199; }
+  # then `sudo vmware-networks --stop && sudo vmware-networks --start`.
   winrm_host       = "172.16.109.199"
   winrm_use_ntlm   = true
   winrm_timeout    = "6h"

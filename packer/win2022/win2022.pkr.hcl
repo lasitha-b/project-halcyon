@@ -37,6 +37,11 @@ source "vmware-iso" "win2022" {
   # to host" on the sysprep provisioner's file upload. win11 already pins its IP
   # this way; win2022 was missing it, which is exactly why only the win2022
   # sysprep rebuild failed.
+  # NOTE: for winrm_host to be reachable, vmnet8's dhcpd must reserve this IP
+  # for the fixed MAC below. Add to /etc/vmware/vmnet8/dhcpd/dhcpd.conf:
+  #   host halcyon-win2022 { hardware ethernet 00:50:56:20:20:22;
+  #                          fixed-address 172.16.109.202; }
+  # then `sudo vmware-networks --stop && sudo vmware-networks --start`.
   winrm_host       = "172.16.109.202"
   winrm_use_ntlm   = true
   winrm_timeout    = "6h"
