@@ -43,33 +43,46 @@ pfSense's default "block private networks" WAN rule doesn't interfere.
 
 ## Building the box
 
-### Reliable path (recommended): manual install + config restore
+### About the installer (Netgate Installer, network-based)
 
-pfSense CE has no unattended-install answer file, so a scripted install is
-inherently brittle. The dependable way, ~10 minutes, once:
+The ISO in use is the **Netgate Installer** (`netgate-installer-v1.2-RELEASE-amd64.iso`,
+decompressed to `/mnt/halcyon-lab/isos/`). Unlike the old self-contained pfSense
+CE ISO, it boots a small live FreeBSD environment and **downloads** the pfSense
+CE image from Netgate's repos during install (`pfSense-repoc-static` is on the
+media; there is no bundled OS image). Two consequences:
 
-1. Create/boot a VM from the pfSense CE ISO with **three e1000 NICs** in this
-   order: `vmnet22` (WAN), `vmnet20` (LAN), `vmnet21` (DMZ). Order fixes
-   `em0/em1/em2`.
-2. Run the installer, accepting all defaults (Auto/ZFS). Reboot when prompted.
-3. At the console, if it asks to set up interfaces/VLANs, decline VLANs and let
-   it assign `em0→WAN, em1→LAN, em2→DMZ` (or just skip — the restore fixes it).
-4. From a browser on the LAN management adapter, open `https://10.20.10.254`
-   (or the pfSense-assigned LAN IP shown on the console). Log in `admin` /
-   `pfsense`.
+- **It needs internet during install.** The install VM's NIC must be on
+  **`vmnet8`** (the NAT network with outbound access), *not* the isolated lab
+  vmnets. You attach the three lab NICs later, at box-run time, via the
+  Vagrantfile; the base install just needs one internet-capable NIC.
+- **It's interactive and is not Packer-automated here.** A `communicator =
+  "none"` build can neither drive the wizard nor detect completion, and the
+  wizard isn't a fixed keystroke script — so `pfsense.pkr.hcl` is kept only as a
+  box-packaging reference. The real build is the manual path below.
+
+### Reliable path: manual install + config restore (~10 min, once)
+
+1. VMware Workstation GUI → **New VM** → installer disc image =
+   `/mnt/halcyon-lab/isos/netgate-installer-v1.2-RELEASE-amd64.iso` → guest OS
+   **FreeBSD 13+ 64-bit** → 1 GB RAM, 1 vCPU, **8 GB SATA disk**, **one NIC on
+   NAT (`vmnet8`)** for internet. Power on.
+2. Work through the Netgate installer: accept the EULA, choose **Install pfSense
+   CE** (Community Edition — no registration), accept the Auto/ZFS defaults. It
+   downloads and installs CE, then reboots.
+3. After reboot, at the console say **no** to VLANs; if it prompts for interface
+   assignment just accept whatever it offers — the config restore in step 5
+   overrides all of it. Note the LAN IP it prints.
+4. Browse to that LAN IP (over `vmnet8`/the console-shown address); log in
+   `admin` / `pfsense`.
 5. **Diagnostics → Backup & Restore → Restore configuration** → upload
-   `config.xml` → restore. pfSense reboots fully configured.
-6. Capture it as a Vagrant box:
+   `packer/pfsense/config.xml` → restore. pfSense reboots fully configured
+   (interfaces wan=em0/lan=em1/opt1=em2, DHCP, NAT, firewall rules).
+6. Shut the VM down and package it:
    `vagrant package --base <vm-name> --output /mnt/halcyon-lab/packer-output/boxes/halcyon-pfsense.box`
    then `vagrant box add halcyon/pfsense <that .box> --force`.
 
-### Automated path (best-effort)
-
-`scripts/build-images.sh` runs `packer build packer/pfsense/pfsense.pkr.hcl`
-with `HALCYON_PFSENSE_ISO`. The `boot_command` keystroke timings in the template
-**will likely need tuning** on your host — watch the first run over VNC (endpoint
-is printed in the Packer log) and adjust the `<waitNs>` values. If it drifts, use
-the manual path above; the result is identical.
+Once step 2's base install is done and the VM is registered in VMware, steps 5–6
+are mechanical and can be handed off to be finished for you.
 
 ## Interface-order gotcha
 

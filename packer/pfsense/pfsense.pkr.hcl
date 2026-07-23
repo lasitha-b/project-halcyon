@@ -14,6 +14,16 @@ packer {
 # ---------------------------------------------------------------------------
 # pfSense CE edge firewall base box.
 #
+# NOTE (2026-07): the ISO actually in use is the *Netgate Installer*
+# (netgate-installer-v1.2), a network-based installer that downloads pfSense CE
+# during setup and runs an interactive wizard. It cannot be driven by the
+# communicator="none" + boot_command approach sketched below (no way to detect
+# install completion, no fixed keystroke script, needs an internet NIC on
+# vmnet8). This template is therefore kept as a box-packaging *reference* only;
+# build the box via the manual runbook in packer/pfsense/README.md. The
+# boot_command below is retained for the historical self-contained pfSense CE
+# ISO and is NOT expected to work with the Netgate Installer.
+#
 # IMPORTANT - read packer/pfsense/README.md before running this. Unlike the
 # Windows/Ubuntu templates, pfSense CE has NO unattended-install answer-file
 # mechanism: its installer is a fixed ncurses wizard, so the only way to drive
