@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Specialize/OOBE-pass answer file applied automatically by sysprep on each
+  clone's first boot (copied to C:\Windows\Panther\unattend.xml by
+  scripts/sysprep.ps1 before the base image is captured). Generalize wipes
+  local accounts and machine-specific WinRM config, so this recreates both -
+  same bootstrap "vagrant" account as the original install-time
+  autounattend.xml, not a lab credential.
+-->
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
+  <settings pass="oobeSystem">
+    <component name="Microsoft-Windows-Shell-Setup" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
+      <UserAccounts>
+        <LocalAccounts>
+          <LocalAccount wcm:action="add">
+            <Name>vagrant</Name>
+            <Password><Value>vagrant</Value><PlainText>true</PlainText></Password>
+            <Group>Administrators</Group>
+          </LocalAccount>
+        </LocalAccounts>
+      </UserAccounts>
+      <AutoLogon>
+        <Enabled>true</Enabled>
+        <Username>vagrant</Username>
+        <Password><Value>vagrant</Value><PlainText>true</PlainText></Password>
+        <LogonCount>10</LogonCount>
+      </AutoLogon>
+      <FirstLogonCommands>
+        <SynchronousCommand wcm:action="add">
+          <Order>1</Order>
+          <CommandLine>powershell.exe -ExecutionPolicy Bypass -File C:\Windows\Setup\Scripts\enable-winrm.ps1</CommandLine>
+        </SynchronousCommand>
+      </FirstLogonCommands>
+      <OOBE>
+        <HideEULAPage>true</HideEULAPage>
+        <SkipMachineOOBE>true</SkipMachineOOBE>
+        <SkipUserOOBE>true</SkipUserOOBE>
+        <NetworkLocation>Work</NetworkLocation>
+      </OOBE>
+    </component>
+  </settings>
+</unattend>

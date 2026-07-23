@@ -16,6 +16,7 @@ ansible/group_vars/secrets_seed.yml
 # Generated per-deploy artifacts (contain live secrets — never commit)
 docs/answer-key.md
 ansible/generated/
+ansible/inventory_discovered.yml
 
 # ISOs (too large, and licensed media)
 *.iso

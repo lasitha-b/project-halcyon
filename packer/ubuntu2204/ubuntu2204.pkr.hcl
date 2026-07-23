@@ -13,12 +13,12 @@ packer {
 
 variable "iso_url" {
   type    = string
-  default = "https://releases.ubuntu.com/22.04/ubuntu-22.04.4-live-server-amd64.iso"
+  default = "/run/media/lasitha/SSD 1TB/ubuntu-22.04.5-live-server-amd64.iso"
 }
 
 variable "iso_checksum" {
   type    = string
-  default = "none" # pin the sha256 from releases.ubuntu.com/22.04/SHA256SUMS
+  default = "sha256:9bc6028870aef3f74f4e16b900008179e78b130e6b0b9a140635434a46aa98b0"
 }
 
 source "vmware-iso" "ubuntu2204" {
@@ -31,20 +31,21 @@ source "vmware-iso" "ubuntu2204" {
   ssh_timeout      = "2h"
   shutdown_command = "echo 'vagrant' | sudo -S shutdown -P now"
   cpus             = 2
-  memory           = 1536
+  memory           = 3072
   disk_size        = 30000
   version          = 19
   headless         = true
+  network_adapter_type = "vmxnet3"
+  output_directory = "/mnt/halcyon-lab/packer-output/ubuntu2204"
 
   http_directory = "packer/ubuntu2204/http"
   boot_command = [
-    "<esc><wait>",
-    "e<wait>",
-    "<down><down><down><end>",
-    " autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ---<wait>",
+    "e",
+    "<down><down><down><end><left><left><left>",
+    " autoinstall ds=nocloud-net\\;s=http://{{ .HTTPIP }}:{{ .HTTPPort }}/ ",
     "<f10>"
   ]
-  boot_wait = "5s"
+  boot_wait = "2s"
 }
 
 build {
@@ -60,7 +61,7 @@ build {
   }
 
   post-processor "vagrant" {
-    output             = "packer/ubuntu2204/halcyon-ubuntu2204.box"
-    provider_override  = "vmware_desktop"
+    output             = "/mnt/halcyon-lab/packer-output/boxes/halcyon-ubuntu2204.box"
+    provider_override  = "vmware"
   }
 }

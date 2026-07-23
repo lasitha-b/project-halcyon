@@ -21,7 +21,11 @@ ou_layout:
   - "OU=Workstations,OU=Halcyon,{{ domain_dn }}"
   - "OU=Servers,OU=Halcyon,{{ domain_dn }}"
 
-groups:
+# NOTE: named security_groups (not `groups`) because `groups` is Ansible's
+# own reserved magic variable (inventory group-membership map) - defining a
+# var with that name silently shadows it and breaks anything that expects
+# the real one.
+security_groups:
   - name: IT-Support
     desc: "Tier-1 helpdesk staff"
   - name: IT-Infra
@@ -102,8 +106,12 @@ randomize_min_adcs_live: 2
 randomize_min_optional_live: 6
 
 # ---------------------------------------------------------------------------
-# Posture — realism knobs. Defender AV is always on; only the *firewall* is off
-# per the lab's "flat network, no firewall" design.
+# Posture — realism knobs. Defender AV is always on; only the per-host Defender
+# *firewall* is off, keeping the internal LAN flat and trusting between hosts.
+# (This is the intra-LAN design; the network perimeter is enforced separately by
+# the pfSense edge firewall fw01 — see docs/architecture.md "Network
+# segmentation". The two are independent: no host firewall inside, real
+# segmentation at the edge.)
 # ---------------------------------------------------------------------------
 posture:
   defender_av_enabled: true

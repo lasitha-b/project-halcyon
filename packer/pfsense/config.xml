@@ -1,0 +1,401 @@
+<?xml version="1.0"?>
+<pfsense>
+	<!--
+	  Project Halcyon - pfSense CE edge firewall configuration.
+
+	  This is the authoritative firewall config for the lab. Two ways to apply it:
+
+	    1. Automated: baked into the box by packer/pfsense/pfsense.pkr.hcl (dropped
+	       to /cf/conf/config.xml before first boot).
+	    2. Manual fallback (reliable, ~2 min): on a freshly-installed pfSense CE VM,
+	       WebGUI -> Diagnostics -> Backup & Restore -> Restore -> upload this file.
+	       pfSense reboots and comes up fully configured.
+
+	  Interface-to-NIC mapping is POSITION-DEPENDENT and must match the Vagrantfile's
+	  NIC order for the pfsense VM (see packer/pfsense/README.md):
+	      ethernet0 (vmnet22, WAN) -> em0 -> wan
+	      ethernet1 (vmnet20, LAN) -> em1 -> lan
+	      ethernet2 (vmnet21, DMZ) -> em2 -> opt1
+	  If the interfaces come up assigned to the wrong zones, reassign them once from
+	  the console menu (option 1) to match the em0/em1/em2 order above.
+
+	  Admin login: admin / pfsense (pfSense factory default). If login ever fails
+	  after a restore, use console menu option 3 ("Reset webConfigurator password"),
+	  which forces admin/pfsense regardless of the hash below.
+	-->
+	<version>22.9</version>
+	<lastchange></lastchange>
+	<system>
+		<optimization>normal</optimization>
+		<hostname>fw01</hostname>
+		<domain>corp.halcyon.local</domain>
+		<dnsserver>10.20.10.10</dnsserver>
+		<dnsallowoverride></dnsallowoverride>
+		<timezone>Etc/UTC</timezone>
+		<timeservers>pool.ntp.org</timeservers>
+		<webgui>
+			<protocol>https</protocol>
+			<loginautocomplete></loginautocomplete>
+			<port></port>
+			<max_procs>2</max_procs>
+		</webgui>
+		<usevirtualterminal></usevirtualterminal>
+		<disablenatreflection>yes</disablenatreflection>
+		<disableconsolemenu></disableconsolemenu>
+		<disablesegmentationoffloading></disablesegmentationoffloading>
+		<disablelargereceiveoffloading></disablelargereceiveoffloading>
+		<ipv6allow></ipv6allow>
+		<powerd_ac_mode>hadp</powerd_ac_mode>
+		<bogons>
+			<interval>monthly</interval>
+		</bogons>
+		<hn_altq_enable></hn_altq_enable>
+		<already_run_config_upgrade></already_run_config_upgrade>
+		<ssh>
+			<enable>enabled</enable>
+		</ssh>
+		<user>
+			<name>admin</name>
+			<descr><![CDATA[System Administrator]]></descr>
+			<scope>system</scope>
+			<groupname>admins</groupname>
+			<!-- bcrypt of "pfsense"; if login fails, console option 3 resets it. -->
+			<bcrypt-hash>$2b$10$1BrDpqPBFVYaBBQFdgc2wOm5cRP.Mtl6iaWLuBn/wYfQnGmYGZgbW</bcrypt-hash>
+			<uid>0</uid>
+			<expires></expires>
+			<dashboardcolumns>2</dashboardcolumns>
+			<authorizedkeys></authorizedkeys>
+			<priv>user-shell-access</priv>
+		</user>
+		<group>
+			<name>admins</name>
+			<description><![CDATA[System Administrators]]></description>
+			<scope>system</scope>
+			<gid>1998</gid>
+			<member>0</member>
+			<priv>page-all</priv>
+		</group>
+		<nextuid>2000</nextuid>
+		<nextgid>2000</nextgid>
+	</system>
+
+	<!--
+	  ================================ INTERFACES ================================
+	  wan  = em0 (vmnet22) 203.0.113.254/24  - "outside", attacker sits here
+	  lan  = em1 (vmnet20) 10.20.10.254/24   - internal corporate net (AD)
+	  opt1 = em2 (vmnet21) 172.20.1.254/24   - DMZ, WEB01 only
+	-->
+	<interfaces>
+		<wan>
+			<enable></enable>
+			<if>em0</if>
+			<descr><![CDATA[WAN]]></descr>
+			<ipaddr>203.0.113.254</ipaddr>
+			<subnet>24</subnet>
+			<gateway></gateway>
+			<blockpriv></blockpriv>
+			<blockbogons></blockbogons>
+			<media></media>
+			<mediaopt></mediaopt>
+		</wan>
+		<lan>
+			<enable></enable>
+			<if>em1</if>
+			<descr><![CDATA[LAN]]></descr>
+			<ipaddr>10.20.10.254</ipaddr>
+			<subnet>24</subnet>
+			<media></media>
+			<mediaopt></mediaopt>
+		</lan>
+		<opt1>
+			<enable></enable>
+			<if>em2</if>
+			<descr><![CDATA[DMZ]]></descr>
+			<ipaddr>172.20.1.254</ipaddr>
+			<subnet>24</subnet>
+			<media></media>
+			<mediaopt></mediaopt>
+		</opt1>
+	</interfaces>
+
+	<!--
+	  ================================ DHCP ================================
+	  pfSense owns DHCP on every segment (VMware's per-vmnet dhcpd is disabled by
+	  scripts/setup-networks.sh). Every lab VM gets a deterministic IP via a
+	  static MAC mapping, so ansible/inventory.yml can hardcode addresses and the
+	  old scripts/discover-ips.py lease-scraping dance is no longer needed.
+	  Gateway handed out = the pfSense interface (.254). DNS on LAN/DMZ = DC01.
+	-->
+	<dhcpd>
+		<lan>
+			<enable></enable>
+			<range>
+				<from>10.20.10.100</from>
+				<to>10.20.10.199</to>
+			</range>
+			<gateway>10.20.10.254</gateway>
+			<dnsserver>10.20.10.10</dnsserver>
+			<domain>corp.halcyon.local</domain>
+			<staticmap>
+				<mac>00:50:56:20:10:10</mac>
+				<ipaddr>10.20.10.10</ipaddr>
+				<hostname>dc01</hostname>
+			</staticmap>
+			<staticmap>
+				<mac>00:50:56:20:10:20</mac>
+				<ipaddr>10.20.10.20</ipaddr>
+				<hostname>srv01</hostname>
+			</staticmap>
+			<staticmap>
+				<mac>00:50:56:20:10:31</mac>
+				<ipaddr>10.20.10.31</ipaddr>
+				<hostname>ws01</hostname>
+			</staticmap>
+			<staticmap>
+				<mac>00:50:56:20:10:32</mac>
+				<ipaddr>10.20.10.32</ipaddr>
+				<hostname>ws02</hostname>
+			</staticmap>
+		</lan>
+		<opt1>
+			<enable></enable>
+			<range>
+				<from>172.20.1.100</from>
+				<to>172.20.1.199</to>
+			</range>
+			<gateway>172.20.1.254</gateway>
+			<dnsserver>10.20.10.10</dnsserver>
+			<domain>corp.halcyon.local</domain>
+			<staticmap>
+				<mac>00:50:56:20:10:40</mac>
+				<ipaddr>172.20.1.40</ipaddr>
+				<hostname>web01</hostname>
+			</staticmap>
+		</opt1>
+		<wan>
+			<enable></enable>
+			<range>
+				<from>203.0.113.100</from>
+				<to>203.0.113.199</to>
+			</range>
+			<gateway>203.0.113.254</gateway>
+			<dnsserver>203.0.113.254</dnsserver>
+			<staticmap>
+				<mac>00:50:56:20:10:66</mac>
+				<ipaddr>203.0.113.66</ipaddr>
+				<hostname>attack</hostname>
+			</staticmap>
+		</wan>
+	</dhcpd>
+
+	<!--
+	  ================================ NAT ================================
+	  Outbound: automatic (masquerade DMZ/LAN out the WAN).
+	  Port-forward: attacker reaches the web app by hitting the pfSense WAN IP.
+	      203.0.113.254:80  -> 172.20.1.40:80   (WEB01)
+	      203.0.113.254:443 -> 172.20.1.40:443  (WEB01)
+	  Each <rule> is linked (associated) to the matching WAN pass rule below via
+	  the <associated-rule-id>, so opening the port forward also opens the filter.
+	-->
+	<nat>
+		<outbound>
+			<mode>automatic</mode>
+		</outbound>
+		<rule>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<network>wanip</network>
+				<port>80</port>
+			</destination>
+			<protocol>tcp</protocol>
+			<target>172.20.1.40</target>
+			<local-port>80</local-port>
+			<interface>wan</interface>
+			<descr><![CDATA[WAN -> WEB01 HTTP]]></descr>
+			<associated-rule-id>nat_web_http</associated-rule-id>
+		</rule>
+		<rule>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<network>wanip</network>
+				<port>443</port>
+			</destination>
+			<protocol>tcp</protocol>
+			<target>172.20.1.40</target>
+			<local-port>443</local-port>
+			<interface>wan</interface>
+			<descr><![CDATA[WAN -> WEB01 HTTPS]]></descr>
+			<associated-rule-id>nat_web_https</associated-rule-id>
+		</rule>
+	</nat>
+
+	<!--
+	  ================================ FIREWALL RULES ================================
+	  Rules are evaluated top-down, first match wins, per interface. Anything not
+	  explicitly passed is dropped by the implicit default-deny on each interface.
+
+	  WAN  : only the two NAT-associated web rules (to WEB01:80/443). Everything
+	         else inbound from the attacker's segment is dropped. In particular
+	         WAN -> LAN is BLOCKED, so the attacker CANNOT touch AD directly. This
+	         is the load-bearing control: the only way in is the web app.
+	  LAN  : trusted internal net -> anywhere (flat internal design preserved).
+	  DMZ  : WEB01 may reach anywhere EXCEPT the firewall's own admin plane. This
+	         is the deliberate pivot surface (WEB01 needs AD/DNS/DB to LAN, and the
+	         attacker pivots through it). To harden into a "pivot via DC01 only"
+	         variant, replace the "DMZ pivot" pass rule with a tighter dest set;
+	         see packer/pfsense/README.md. Doing so will make MSSQL/lateral paths
+	         reachable only after first landing on DC01.
+	-->
+	<filter>
+		<!-- ============ WAN ============ -->
+		<rule>
+			<id></id>
+			<tracker>1000000001</tracker>
+			<type>pass</type>
+			<interface>wan</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<address>172.20.1.40</address>
+				<port>80</port>
+			</destination>
+			<descr><![CDATA[NAT WAN -> WEB01 HTTP]]></descr>
+			<associated-rule-id>nat_web_http</associated-rule-id>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000002</tracker>
+			<type>pass</type>
+			<interface>wan</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<any></any>
+			</source>
+			<destination>
+				<address>172.20.1.40</address>
+				<port>443</port>
+			</destination>
+			<descr><![CDATA[NAT WAN -> WEB01 HTTPS]]></descr>
+			<associated-rule-id>nat_web_https</associated-rule-id>
+		</rule>
+
+		<!-- ============ LAN ============ -->
+		<rule>
+			<id></id>
+			<tracker>1000000010</tracker>
+			<type>pass</type>
+			<interface>lan</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp/udp</protocol>
+			<source>
+				<network>lan</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+			<descr><![CDATA[LAN internal -> any (flat trusted internal net)]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000011</tracker>
+			<type>pass</type>
+			<interface>lan</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>icmp</protocol>
+			<source>
+				<network>lan</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+			<descr><![CDATA[LAN internal -> any ICMP]]></descr>
+		</rule>
+
+		<!-- ============ DMZ (opt1) ============ -->
+		<rule>
+			<id></id>
+			<tracker>1000000020</tracker>
+			<type>block</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<network>(self)</network>
+				<port>443</port>
+			</destination>
+			<descr><![CDATA[DMZ -> firewall admin GUI: deny]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000021</tracker>
+			<type>block</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<network>(self)</network>
+				<port>22</port>
+			</destination>
+			<descr><![CDATA[DMZ -> firewall SSH: deny]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000022</tracker>
+			<type>pass</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp/udp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+			<descr><![CDATA[DMZ pivot: WEB01 -> any (AD/DB to LAN, reverse shell to WAN)]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000023</tracker>
+			<type>pass</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>icmp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<any></any>
+			</destination>
+			<descr><![CDATA[DMZ -> any ICMP]]></descr>
+		</rule>
+	</filter>
+
+	<!--
+	  DNS: pfSense keeps its factory-default unbound resolver (DNS Resolver) for
+	  the WAN scope's convenience. We deliberately do NOT enable dnsmasq here -
+	  unbound already binds :53, and enabling both collides. LAN/DMZ guests are
+	  handed DC01 (10.20.10.10) as their DNS directly via DHCP, so AD name
+	  resolution never depends on the firewall.
+	-->
+	<gateways></gateways>
+
+	<revision>
+		<time>1753305600</time>
+		<description><![CDATA[Project Halcyon baseline: WAN/DMZ/LAN segmentation]]></description>
+		<username>halcyon-provision</username>
+	</revision>
+</pfsense>

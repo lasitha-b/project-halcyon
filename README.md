@@ -11,7 +11,12 @@ vulnerability paths are active on every deploy — see `docs/architecture.md` fo
 
 - `corp.halcyon.local` — single-forest AD domain: a DC (with AD CS), an MSSQL server,
   two Windows clients, and a domain-joined Linux web server (Ubuntu, SSSD).
-- A hand-written vulnerable intranet web app (Flask) as the only external entry point.
+- A **pfSense edge firewall** (`fw01`) segmenting the range into WAN / DMZ / LAN, so the
+  attacker starts outside the perimeter and must breach the web app and pivot inward —
+  direct access to the internal AD network is blocked at the edge. See
+  `docs/architecture.md` ("Network segmentation").
+- A hand-written vulnerable intranet web app (Flask) as the only external entry point,
+  reachable from the outside solely via the firewall's port-forward.
 - Non-CVE, configuration-class vulnerabilities only: OWASP-style web bugs, Kerberos
   misconfigs, ACL abuse, ADCS ESC1/ESC4/ESC6/ESC8, delegation/RBCD, NTLM relay,
   MSSQL misconfig, endpoint credential exposure.
@@ -25,7 +30,9 @@ vulnerability paths are active on every deploy — see `docs/architecture.md` fo
 - Packer (to build the base images once)
 - Ansible (control node — see "Windows host" below if that's you; native on Linux)
 - Windows Server 2022 and Windows 11 evaluation ISOs (Microsoft eval, 180-day)
+- pfSense CE ISO (free) for the edge firewall — see `packer/pfsense/README.md`
 - Host: ≥32 GB RAM, ≥250 GB free SSD, network access disabled to any real/production LAN
+  (the firewall adds ~1 GB; the 7-VM lab still fits a 32 GB host)
 
 ## Host OS: Linux vs. Windows
 
@@ -77,12 +84,14 @@ Setup, once:
    under `/mnt/c/...` — much faster I/O and avoids Windows/Linux path
    translation issues with Vagrant.
 
-One thing to verify once, not assume: WSL2 needs to reach the lab's
-host-only subnet (`10.20.10.0/24`) over the network for the Ansible step to
-connect. This normally works automatically — WSL2 NATs outbound traffic
-through the Windows host, which already has a route to that subnet via the
-VMware host-only adapter — but confirm with `ping 10.20.10.10` from WSL2
-after `vagrant up` before assuming the Ansible step will work.
+One thing to verify once, not assume: WSL2 needs to reach all three lab
+host-only subnets — LAN `10.20.10.0/24`, DMZ `172.20.1.0/24`, and WAN
+`203.0.113.0/24` — over the network, since Ansible manages each guest directly
+on its own segment (out-of-band, independent of the firewall). This normally
+works automatically — WSL2 NATs outbound traffic through the Windows host,
+which already has a route to each subnet via its VMware host-only adapter — but
+confirm with `ping 10.20.10.10`, `ping 172.20.1.40`, and `ping 203.0.113.66`
+from WSL2 after `vagrant up` before assuming the Ansible step will work.
 
 ## Quick start
 
@@ -90,7 +99,8 @@ On Linux, run this directly. On Windows, run it from the WSL2 terminal
 described above.
 
 ```
-scripts/build-images.sh      # Packer: build the 3 base VM images (one-time, ~1-2h)
+scripts/build-images.sh      # Packer: build the base VM images (one-time, ~1-2h; pfSense see packer/pfsense/README.md)
+scripts/setup-networks.sh    # one-time host net prep: create the 3 segmented vmnets (run by deploy.sh too)
 scripts/deploy.sh            # vagrant up, then Ansible provisioning + randomize + snapshot
 scripts/health.sh            # verify every host/service is reachable and correctly configured
 scripts/reset.sh             # revert all VMs to the clean, freshly-armed snapshot
@@ -103,6 +113,7 @@ the randomized secrets and solution paths for this specific deployment).
 
 ## Isolation
 
-This lab runs on an isolated VMware **host-only** network only. Do not bridge any VM to
-your real LAN or the internet. Hosts run intentionally weakened configurations, eval
-Windows licenses, and default/weak credentials — treat the whole subnet as hostile.
+This lab runs on isolated VMware **host-only** networks only (the three segmented vmnets;
+none has a NAT/bridge to a real network). Do not bridge any VM to your real LAN or the
+internet. Hosts run intentionally weakened configurations, eval Windows licenses, and
+default/weak credentials — treat all three subnets as hostile.

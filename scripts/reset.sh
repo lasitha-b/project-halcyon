@@ -6,7 +6,8 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-for vm in dc01 srv01 ws01 ws02 web01 attack; do
+# fw01 first so the gateway/DHCP is back before the guests it serves.
+for vm in fw01 dc01 srv01 ws01 ws02 web01 attack; do
   echo "[reset] reverting $vm to clean-armed..."
   vagrant snapshot restore "$vm" clean-armed
 done

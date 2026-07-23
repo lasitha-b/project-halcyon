@@ -12,3 +12,5 @@ collections:
     version: ">=3.5.0"
   - name: ansible.posix
     version: ">=1.5.0"
+  - name: chocolatey.chocolatey
+    version: ">=1.5.0"

@@ -8,17 +8,17 @@
 # scripts against MSSQL, and sqlcmd is guaranteed present with the engine.
 
 - name: Ensure Chocolatey is installed
-  ansible.windows.win_chocolatey:
+  chocolatey.chocolatey.win_chocolatey:
     name: chocolatey
     state: present
 
 - name: Install SQL Server Express
-  ansible.windows.win_chocolatey:
+  chocolatey.chocolatey.win_chocolatey:
     name: sql-server-express
     state: present
 
 - name: Install SQL Server Management Studio (for lab admin convenience, not required by attackers)
-  ansible.windows.win_chocolatey:
+  chocolatey.chocolatey.win_chocolatey:
     name: sql-server-management-studio
     state: present
   ignore_errors: true

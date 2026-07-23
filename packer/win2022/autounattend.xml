@@ -6,7 +6,7 @@
   docs/architecture.md. Creates a local "vagrant" account used only to
   bootstrap WinRM + the domain join; it is not a lab credential.
 -->
-<unattend xmlns="urn:schemas-microsoft-com:unattend">
+<unattend xmlns="urn:schemas-microsoft-com:unattend" xmlns:wcm="http://schemas.microsoft.com/WMIConfig/2002/State">
   <settings pass="windowsPE">
     <component name="Microsoft-Windows-International-Core-WinPE" processorArchitecture="amd64" publicKeyToken="31bf3856ad364e35" language="neutral" versionScope="nonSxS">
       <SetupUILanguage><UILanguage>en-US</UILanguage></SetupUILanguage>
@@ -32,6 +32,12 @@
       </DiskConfiguration>
       <ImageInstall>
         <OSImage>
+          <InstallFrom>
+            <MetaData wcm:action="add">
+              <Key>/IMAGE/INDEX</Key>
+              <Value>2</Value>
+            </MetaData>
+          </InstallFrom>
           <InstallTo><DiskID>0</DiskID><PartitionID>2</PartitionID></InstallTo>
           <InstallToAvailablePartition>false</InstallToAvailablePartition>
         </OSImage>

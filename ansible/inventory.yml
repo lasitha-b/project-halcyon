@@ -1,4 +1,13 @@
 all:
+  # Addressing is segmented by the pfSense edge firewall (fw01):
+  #   LAN 10.20.10.0/24  (vmnet20)  dc01/srv01/ws01/ws02
+  #   DMZ 172.20.1.0/24  (vmnet21)  web01
+  #   WAN 203.0.113.0/24 (vmnet22)  attack
+  # These IPs are deterministic (pfSense static-MAC DHCP mappings, mirrored in
+  # packer/pfsense/config.xml and the Vagrantfile), so this file is the source
+  # of truth - the old discover-ips lease-scraping step is no longer needed.
+  # The Ansible control node reaches every host directly over the host's .1
+  # management adapter on each vmnet, regardless of firewall rules.
   vars:
     domain_name: corp.halcyon.local
     domain_netbios: HALCYON
@@ -8,7 +17,9 @@ all:
     windows:
       vars:
         ansible_connection: winrm
-        ansible_winrm_transport: negotiate
+        ansible_user: vagrant
+        ansible_password: vagrant # bootstrap only; rotated by randomize role
+        ansible_winrm_transport: ntlm
         ansible_winrm_server_cert_validation: ignore
         ansible_port: 5985
       children:
@@ -31,14 +42,18 @@ all:
       vars:
         ansible_connection: ssh
         ansible_user: vagrant
+        ansible_password: vagrant # bootstrap only; rotated by randomize role
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no"
       hosts:
         web01:
-          ansible_host: 10.20.10.40
+          ansible_host: 172.20.1.40 # DMZ (vmnet21)
 
     attacker:
       vars:
         ansible_connection: ssh
         ansible_user: kali
+        ansible_password: kali # standard Kali image default; change if this VM's was customized
+        ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no"
       hosts:
         attack:
-          ansible_host: 10.20.10.66
+          ansible_host: 203.0.113.66 # WAN (vmnet22)
