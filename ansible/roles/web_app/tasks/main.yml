@@ -73,6 +73,15 @@
     requirements: /var/www/intranet/requirements.txt
     virtualenv: /var/www/intranet/venv
 
+- name: Deploy app environment file (DSN + flask secret)
+  ansible.builtin.template:
+    src: halcyon-webapp.env.j2
+    dest: /etc/default/halcyon-webapp
+    mode: "0640"
+    owner: root
+    group: www-data
+  notify: restart webapp
+
 - name: Deploy systemd unit for the app (gunicorn)
   ansible.builtin.template:
     src: halcyon-webapp.service.j2
@@ -141,5 +150,7 @@
     path: /etc/default/halcyon-webapp
     create: true
     line: "HALCYON_LIVE_PATHS=\"{{ halcyon_live_paths | join(' ') }}\""
-    mode: "0644"
+    owner: root
+    group: www-data
+    mode: "0640"
   notify: restart webapp
