@@ -1,13 +1,12 @@
 all:
   # Addressing is segmented by the pfSense edge firewall (fw01):
-  #   LAN 10.20.10.0/24  (vmnet20)  dc01/srv01/ws01/ws02
-  #   DMZ 172.20.1.0/24  (vmnet21)  web01
-  #   WAN 203.0.113.0/24 (vmnet22)  attack
+  #   LAN 10.20.10.0/24  (libvirt "lab-lan")  dc01/srv01/ws01/ws02
+  #   DMZ 172.20.1.0/24  (libvirt "lab-dmz")  web01
+  #   WAN 192.168.50.0/24 (libvirt "lab-wan") attack
   # These IPs are deterministic (pfSense static-MAC DHCP mappings, mirrored in
-  # packer/pfsense/config.xml and the Vagrantfile), so this file is the source
-  # of truth - the old discover-ips lease-scraping step is no longer needed.
-  # The Ansible control node reaches every host directly over the host's .1
-  # management adapter on each vmnet, regardless of firewall rules.
+  # packer/pfsense/config.xml), so this file is the source of truth. The
+  # Ansible control node reaches every host directly over the host's .1
+  # management adapter on each libvirt network, regardless of firewall rules.
   vars:
     domain_name: corp.halcyon.local
     domain_netbios: HALCYON
@@ -44,6 +43,7 @@ all:
         ansible_user: vagrant
         ansible_password: vagrant # bootstrap only; rotated by randomize role
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no"
+        ansible_become: true # vagrant has passwordless sudo (autoinstall late-command)
       hosts:
         web01:
           ansible_host: 172.20.1.40 # DMZ (vmnet21)
@@ -56,4 +56,4 @@ all:
         ansible_ssh_common_args: "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o PubkeyAuthentication=no"
       hosts:
         attack:
-          ansible_host: 203.0.113.66 # WAN (vmnet22)
+          ansible_host: 192.168.50.66 # WAN (vmnet22)

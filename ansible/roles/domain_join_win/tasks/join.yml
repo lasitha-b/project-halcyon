@@ -1,0 +1,23 @@
+---
+# Just the domain-join step, reusable for hosts (e.g. SRV01) that need to be
+# domain members before other DC-side roles (ad_identities) can reference
+# their AD computer object, without pulling in the client-only tasks below
+# (staff-session seeding, WS02-specific privesc setup) in main.yml.
+- name: Join to {{ domain_name }}
+  microsoft.ad.membership:
+    dns_domain_name: "{{ domain_name }}"
+    domain_admin_user: "administrator@{{ domain_name }}"
+    # NOT halcyon_da_breakglass_password - that's the DSRM/Safe Mode password
+    # used only during forest promotion, not the domain Administrator's own
+    # logon password (set in ad_forest role on the built-in Administrator).
+    domain_admin_password: "{{ halcyon_local_admin_password }}"
+    domain_ou_path: "{{ 'OU=Servers' if inventory_hostname in groups['member_servers'] else 'OU=Workstations' }},OU=Halcyon,{{ domain_dn }}"
+    state: domain
+    reboot: true
+  register: join_result
+
+- name: Wait for reboot after domain join
+  ansible.builtin.wait_for_connection:
+    delay: 30
+    timeout: 600
+  when: join_result.reboot_required | default(false)

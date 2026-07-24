@@ -18,6 +18,7 @@
       - python3-venv
       - nginx
       - imagemagick
+      - acl # required for Ansible's become_user (privilege-drop) to work correctly
     state: present
     update_cache: true
 

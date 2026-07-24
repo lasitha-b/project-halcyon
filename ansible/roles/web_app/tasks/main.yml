@@ -29,14 +29,14 @@
   ansible.builtin.template:
     src: schema.sql.j2
     dest: /tmp/halcyon_schema.sql
-    mode: "0600"
+    mode: "0644" # must be readable by postgres for the next task
 
 - name: Load schema + seed data
   become: true
   become_user: postgres
-  community.postgresql.postgresql_query:
+  community.postgresql.postgresql_script:
     db: halcyon
-    path_to_script: /tmp/halcyon_schema.sql
+    path: /tmp/halcyon_schema.sql
 
 - name: Remove the rendered schema temp file
   ansible.builtin.file:

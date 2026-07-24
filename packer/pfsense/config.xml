@@ -30,26 +30,30 @@
 		<hostname>fw01</hostname>
 		<domain>corp.halcyon.local</domain>
 		<dnsserver>10.20.10.10</dnsserver>
-		<dnsallowoverride></dnsallowoverride>
 		<timezone>Etc/UTC</timezone>
 		<timeservers>pool.ntp.org</timeservers>
 		<webgui>
 			<protocol>https</protocol>
-			<loginautocomplete></loginautocomplete>
 			<port></port>
 			<max_procs>2</max_procs>
 		</webgui>
-		<usevirtualterminal></usevirtualterminal>
 		<disablenatreflection>yes</disablenatreflection>
-		<disableconsolemenu></disableconsolemenu>
+		<!-- NOTE on pfSense's config.xml boolean convention, learned the hard way:
+		     for these legacy checkbox-style fields, an EMPTY tag being PRESENT
+		     means true/enabled - there is no "false" spelling, false is the tag's
+		     ABSENCE. (Confirmed directly: leaving <disableconsolemenu></disableconsolemenu>
+		     present, meaning "true", silently disabled the console menu and forced
+		     a login prompt instead - not the intent.) So every flag below that we
+		     want OFF is simply omitted, not left empty. disablesegmentationoffloading
+		     and disablelargereceiveoffloading are the one pair we DO want present/true
+		     (recommended for VMware NICs - TSO/LRO offload is a common source of
+		     flaky throughput on virtualized e1000 NICs). -->
 		<disablesegmentationoffloading></disablesegmentationoffloading>
 		<disablelargereceiveoffloading></disablelargereceiveoffloading>
-		<ipv6allow></ipv6allow>
 		<powerd_ac_mode>hadp</powerd_ac_mode>
 		<bogons>
 			<interval>monthly</interval>
 		</bogons>
-		<hn_altq_enable></hn_altq_enable>
 		<already_run_config_upgrade></already_run_config_upgrade>
 		<ssh>
 			<enable>enabled</enable>
@@ -59,8 +63,10 @@
 			<descr><![CDATA[System Administrator]]></descr>
 			<scope>system</scope>
 			<groupname>admins</groupname>
-			<!-- bcrypt of "pfsense"; if login fails, console option 3 resets it. -->
-			<bcrypt-hash>$2b$10$1BrDpqPBFVYaBBQFdgc2wOm5cRP.Mtl6iaWLuBn/wYfQnGmYGZgbW</bcrypt-hash>
+			<!-- bcrypt of "pfsense", generated + verified with Python's bcrypt
+			     (bcrypt.hashpw / bcrypt.checkpw) - not hand-typed. If login ever
+			     fails, console option 3 resets it regardless of this hash. -->
+			<bcrypt-hash>$2b$10$OFFCQ/3o.G.91t/CC1rv/eeMAkkBzfdaurutHoqPkBX5QaCfsGqPW</bcrypt-hash>
 			<uid>0</uid>
 			<expires></expires>
 			<dashboardcolumns>2</dashboardcolumns>
@@ -81,7 +87,7 @@
 
 	<!--
 	  ================================ INTERFACES ================================
-	  wan  = em0 (vmnet22) 203.0.113.254/24  - "outside", attacker sits here
+	  wan  = em0 (vmnet22) 192.168.50.254/24  - "outside", attacker sits here
 	  lan  = em1 (vmnet20) 10.20.10.254/24   - internal corporate net (AD)
 	  opt1 = em2 (vmnet21) 172.20.1.254/24   - DMZ, WEB01 only
 	-->
@@ -90,11 +96,15 @@
 			<enable></enable>
 			<if>em0</if>
 			<descr><![CDATA[WAN]]></descr>
-			<ipaddr>203.0.113.254</ipaddr>
+			<ipaddr>192.168.50.254</ipaddr>
 			<subnet>24</subnet>
 			<gateway></gateway>
-			<blockpriv></blockpriv>
-			<blockbogons></blockbogons>
+			<!-- blockpriv/blockbogons deliberately OMITTED (not left empty - see the
+			     boolean-convention note under <system> above): this lab's WAN
+			     (192.168.50.0/24) is itself a private range, so pfSense's own
+			     "block private networks on WAN" would drop the attacker's own
+			     traffic as a spoofed source - the opposite of what a lab firewall
+			     should do. -->
 			<media></media>
 			<mediaopt></mediaopt>
 		</wan>
@@ -175,14 +185,14 @@
 		<wan>
 			<enable></enable>
 			<range>
-				<from>203.0.113.100</from>
-				<to>203.0.113.199</to>
+				<from>192.168.50.100</from>
+				<to>192.168.50.199</to>
 			</range>
-			<gateway>203.0.113.254</gateway>
-			<dnsserver>203.0.113.254</dnsserver>
+			<gateway>192.168.50.254</gateway>
+			<dnsserver>192.168.50.254</dnsserver>
 			<staticmap>
 				<mac>00:50:56:20:10:66</mac>
-				<ipaddr>203.0.113.66</ipaddr>
+				<ipaddr>192.168.50.66</ipaddr>
 				<hostname>attack</hostname>
 			</staticmap>
 		</wan>
@@ -192,8 +202,8 @@
 	  ================================ NAT ================================
 	  Outbound: automatic (masquerade DMZ/LAN out the WAN).
 	  Port-forward: attacker reaches the web app by hitting the pfSense WAN IP.
-	      203.0.113.254:80  -> 172.20.1.40:80   (WEB01)
-	      203.0.113.254:443 -> 172.20.1.40:443  (WEB01)
+	      192.168.50.254:80  -> 172.20.1.40:80   (WEB01)
+	      192.168.50.254:443 -> 172.20.1.40:443  (WEB01)
 	  Each <rule> is linked (associated) to the matching WAN pass rule below via
 	  the <associated-rule-id>, so opening the port forward also opens the filter.
 	-->

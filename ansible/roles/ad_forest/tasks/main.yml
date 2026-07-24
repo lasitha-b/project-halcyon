@@ -41,6 +41,20 @@
     timeout: 600
   when: forest_promo.reboot_required | default(false)
 
+- name: Switch connection identity to the domain Administrator
+  # Post-promotion, the bootstrap "vagrant" local account (used by
+  # ansible/inventory.yml's ansible_user default) is absorbed into the
+  # domain as an ordinary, non-privileged domain user - it is NOT a member
+  # of Domain Admins/Enterprise Admins. Only the built-in Administrator
+  # (RID 500) becomes the domain Administrator automatically. Enterprise CA
+  # install (adcs role) and AD ACL/delegation work (ad_identities role)
+  # both need Enterprise/Domain Admin rights to write into the Configuration
+  # NC, so switch credentials here for the rest of this play.
+  ansible.builtin.set_fact:
+    ansible_user: Administrator
+    ansible_password: "{{ halcyon_local_admin_password }}"
+  when: forest_promo is succeeded
+
 - name: Create OU structure
   microsoft.ad.ou:
     name: "{{ item.split(',')[0].split('=')[1] }}"

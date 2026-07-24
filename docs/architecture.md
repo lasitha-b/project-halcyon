@@ -7,7 +7,7 @@ solution; this document explains the *design*, which stays constant across deplo
 ## Why this exists
 
 A hard, realistic AD + web pentest range for local practice on a single 32 GB
-VMware Workstation host, using only non-CVE / configuration-class vulnerabilities
+KVM/libvirt host, using only non-CVE / configuration-class vulnerabilities
 (AD misconfig, ADCS/PKI misconfig, OWASP-class web bugs), deliberately **not**
 recognizable as a fork of GOAD or any other public lab — see "Anti-walkthrough
 design" below for why that mattered enough to shape the whole build.
@@ -27,26 +27,26 @@ someone recognize "this is GOAD" at a glance.
 
 ### Network segmentation
 
-`FW01` (pfSense CE) segments the lab into three isolated host-only networks
+`FW01` (pfSense CE) segments the lab into three isolated libvirt networks
 instead of one flat subnet, so the range mirrors a real perimeter and forces
 the attacker to earn internal access rather than start with it:
 
 ```
-  ATTACK (Kali) 203.0.113.66
-        │  WAN  vmnet22  203.0.113.0/24
+  ATTACK (Kali) 192.168.50.66
+        │  WAN  lab-wan  192.168.50.0/24
    ┌────┴─────┐
    │  FW01    │  pfSense   NAT :80/:443 ──► WEB01
    │  .254    │
    └─┬──────┬─┘
  DMZ │      │ LAN
- vmnet21    vmnet20
+ lab-dmz    lab-lan
  172.20.1/24   10.20.10/24
    WEB01 .40   DC01 .10  SRV01 .20  WS01 .31  WS02 .32
 ```
 
-- **WAN (`203.0.113.0/24`)** — the attacker's vantage point. `WAN → LAN` and
+- **WAN (`192.168.50.0/24`)** — the attacker's vantage point. `WAN → LAN` and
   `WAN → DMZ` are blocked outright; the *only* inbound path is a pfSense
-  port-forward of `203.0.113.254:80/443` to `WEB01`. The web app is genuinely
+  port-forward of `192.168.50.254:80/443` to `WEB01`. The web app is genuinely
   the sole front door now — not just "the intended one."
 - **DMZ (`172.20.1.0/24`)** — `WEB01` alone. It reaches the LAN (its legitimate
   AD/DNS/DB needs, and the attacker's pivot after popping it) but not the
@@ -60,11 +60,14 @@ the attacker to earn internal access rather than start with it:
 
 pfSense owns DHCP on every segment, handing each VM a deterministic IP by fixed
 MAC (`packer/pfsense/config.xml`) plus itself (`.254`) as gateway. The host
-retains a `.1` management adapter on all three vmnets, so Ansible provisions
-every guest out-of-band, independent of firewall policy — the segmentation is
-part of the *scenario*, not an obstacle to building it. WAN uses `203.0.113.0/24`
-(TEST-NET-3, non-RFC1918) so pfSense's stock "block private networks" WAN rule
-doesn't clash with lab traffic.
+retains a `.1` management adapter on all three libvirt networks (`lab-wan`/
+`lab-dmz`/`lab-lan`, none of which has a `<forward>` element), so Ansible
+provisions every guest out-of-band, independent of firewall policy — the
+segmentation is part of the *scenario*, not an obstacle to building it. WAN
+uses the private range `192.168.50.0/24`, distinct from libvirt's own default
+NAT network (`192.168.122.0/24` on most hosts), so the two never collide;
+`config.xml` leaves the WAN "block private networks"/"block bogons" options
+off, so this doesn't get blocked at the edge.
 
 The firewall does not weaken the "no CVE, config-class only" premise: it is
 itself a configuration surface (segmentation policy, NAT, an over-broad
@@ -119,13 +122,11 @@ randomized per deploy.
 ## Repo layout
 
 ```
-Vagrantfile              7 VMs (incl. fw01), VMware provider, 3 segmented nets
-packer/                  base image builds (win2022, win11, ubuntu2204, pfsense)
-  pfsense/               pfSense edge firewall: config.xml (the firewall policy)
-                         + best-effort box build + README (manual build path)
+packer/pfsense/           pfSense edge firewall: config.xml (the firewall policy)
+                          + README (manual virt-install build path)
 ansible/
   site.yml               top-level playbook, one play per host group
-  inventory.yml           static inventory, IPs match Vagrantfile
+  inventory.yml           static inventory, IPs match the libvirt network plan
   group_vars/all.yml      identity fabric + vuln_paths catalogue (source of truth)
   group_vars/secrets_seed.yml   GENERATED per-deploy, gitignored
   roles/
@@ -139,26 +140,24 @@ ansible/
     web_app/                custom Flask app deploy, Postgres schema/seed, nginx
     posture/                Defender/firewall/SMB-signing/LDAP/LLMNR toggles
 webapp/                   the actual Flask app source (app.py, templates, static)
-scripts/                  build-images.sh, setup-networks.sh, deploy.sh, reset.sh, health.sh
+scripts/                  setup-networks.sh, deploy.sh, health.sh, verify-segmentation.sh
 docs/                     this file, student-brief.md, answer-key.md (generated)
 ```
 
 ## Operating the lab
 
-On a Windows host, all of this runs from a WSL2 terminal — see the README's
-"Windows host" section for why (Vagrant/Packer drive VMware Workstation on
-the Windows side via WSL interop; Ansible runs natively in WSL2, since it
-has no supported Windows control node, as a step decoupled from Vagrant's
-own provisioner rather than the built-in `ansible` provisioner block).
+The seven VMs are built once via `virt-install` (see the top-level README's
+"Building the VMs" section and `packer/pfsense/README.md` for `fw01`'s
+manual install), then provisioned with Ansible:
 
 ```
-scripts/build-images.sh   # one-time: Packer base images -> Vagrant boxes
-scripts/deploy.sh         # randomize + vagrant up + ansible-playbook + snapshot
-scripts/health.sh         # verify reachability/services
-scripts/reset.sh          # revert to the clean-armed snapshot (same seed)
+scripts/setup-networks.sh   # one-time: libvirt networks + storage pool (idempotent)
+scripts/deploy.sh           # randomize secrets/paths + ansible-playbook
+scripts/health.sh           # verify reachability/services
+scripts/verify-segmentation.sh   # run from ATTACK: confirm edge policy holds
 ```
 
-To generate a genuinely new deployment (new secrets, new live-path selection),
-re-run `scripts/deploy.sh` against a torn-down/rebuilt set of VMs — reusing
-the same seed via `HALCYON_SEED` is only for debugging reproducibility, not
-for normal use.
+There is no reset/snapshot flow — this is a one-time deployment. To generate
+a genuinely new deployment (new secrets, new live-path selection), tear down
+and rebuild the VMs, then re-run `scripts/deploy.sh`; reusing the same seed
+via `HALCYON_SEED` is only for debugging reproducibility, not for normal use.

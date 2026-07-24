@@ -8,88 +8,100 @@ through the firewall to reach Active Directory — see `docs/architecture.md`
 ("Network segmentation").
 
 ```
-  ATTACK (Kali) 203.0.113.66
-        │  WAN  vmnet22  203.0.113.0/24
+  ATTACK (Kali) 192.168.50.66
+        │  WAN  lab-wan  192.168.50.0/24
    ┌────┴─────┐
    │ pfSense  │  fw01   NAT :80/:443 ──► WEB01
    │ .254 all │
    └─┬──────┬─┘
  DMZ │      │ LAN
- vmnet21    vmnet20
+ lab-dmz    lab-lan
  172.20.1/24   10.20.10/24
    WEB01 .40   DC01 .10  SRV01 .20  WS01 .31  WS02 .32
 ```
 
 Interface / IP plan:
 
-| Zone | vmnet  | subnet          | pfSense (gw / DHCP / DNS relay) | host mgmt | NIC  |
-|------|--------|-----------------|---------------------------------|-----------|------|
-| WAN  | vmnet22| 203.0.113.0/24  | 203.0.113.254                   | .1        | em0  |
-| LAN  | vmnet20| 10.20.10.0/24   | 10.20.10.254                    | .1        | em1  |
-| DMZ  | vmnet21| 172.20.1.0/24   | 172.20.1.254                    | .1        | em2  |
+| Zone | libvirt network | subnet          | pfSense (gw / DHCP / DNS relay) | host mgmt | NIC  |
+|------|------------------|-----------------|----------------------------------|-----------|------|
+| WAN  | lab-wan          | 192.168.50.0/24 | 192.168.50.254                   | .1        | em0  |
+| LAN  | lab-lan          | 10.20.10.0/24   | 10.20.10.254                     | .1        | em1  |
+| DMZ  | lab-dmz          | 172.20.1.0/24   | 172.20.1.254                     | .1        | em2  |
 
-The host keeps a `.1` management adapter on **every** vmnet (VMware host-only
-adapters), so Ansible still reaches every guest directly for provisioning — the
-firewall only governs traffic **between guest VMs**, whose default gateway is
-pfSense. WAN uses `203.0.113.0/24` (TEST-NET-3, non-RFC1918) on purpose, so
-pfSense's default "block private networks" WAN rule doesn't interfere.
+The host keeps a `.1` management adapter on **every** lab network (see
+`scripts/setup-networks.sh` — none of them define a `<forward>` element), so
+Ansible still reaches every guest directly for provisioning — the firewall
+only governs traffic **between guest VMs**, whose default gateway is pfSense.
+WAN uses `192.168.50.0/24`, distinct from libvirt's own default NAT network
+(usually `192.168.122.0/24`), so the two never collide. `config.xml` leaves
+the WAN "block private networks"/"block bogons" options off, so a private WAN
+subnet isn't blocked at the edge either.
 
 ## Files
 
 - `config.xml` — **the actual firewall configuration** (interfaces, DHCP with
   deterministic static-MAC mappings, NAT port-forward, firewall rules). This is
-  the deliverable; the box is just a vehicle for it.
-- `pfsense.pkr.hcl` — best-effort automated box build from the pfSense CE ISO.
+  the deliverable; the VM is just a vehicle for it.
 
-## Building the box
+## Building the VM
 
 ### About the installer (Netgate Installer, network-based)
 
-The ISO in use is the **Netgate Installer** (`netgate-installer-v1.2-RELEASE-amd64.iso`,
-decompressed to `/mnt/halcyon-lab/isos/`). Unlike the old self-contained pfSense
-CE ISO, it boots a small live FreeBSD environment and **downloads** the pfSense
-CE image from Netgate's repos during install (`pfSense-repoc-static` is on the
-media; there is no bundled OS image). Two consequences:
+The ISO in use is the **Netgate Installer** (`netgate-installer-v1.2-RELEASE-amd64.iso`).
+Unlike the old self-contained pfSense CE ISO, it boots a small live FreeBSD
+environment and **downloads** the pfSense CE image from Netgate's repos during
+install (`pfSense-repoc-static` is on the media; there is no bundled OS
+image). Two consequences:
 
-- **It needs internet during install.** The install VM's NIC must be on
-  **`vmnet8`** (the NAT network with outbound access), *not* the isolated lab
-  vmnets. You attach the three lab NICs later, at box-run time, via the
-  Vagrantfile; the base install just needs one internet-capable NIC.
-- **It's interactive and is not Packer-automated here.** A `communicator =
-  "none"` build can neither drive the wizard nor detect completion, and the
-  wizard isn't a fixed keystroke script — so `pfsense.pkr.hcl` is kept only as a
-  box-packaging reference. The real build is the manual path below.
+- **It needs internet during install.** The install VM's first NIC must be on
+  libvirt's `default` NAT network (outbound access), *not* the isolated lab
+  networks. The three lab NICs are attached afterward, once the base install
+  and config restore are done.
+- **It's interactive and can't be scripted like the Windows/Ubuntu
+  autounattend/cloud-init builds.** The installer wizard has no unattended
+  mode, so this VM is driven by hand over VNC — see the steps below.
 
-### Reliable path: manual install + config restore (~10 min, once)
+### Manual install + config restore (~10 min, once)
 
-1. VMware Workstation GUI → **New VM** → installer disc image =
-   `/mnt/halcyon-lab/isos/netgate-installer-v1.2-RELEASE-amd64.iso` → guest OS
-   **FreeBSD 13+ 64-bit** → 1 GB RAM, 1 vCPU, **8 GB SATA disk**, **one NIC on
-   NAT (`vmnet8`)** for internet. Power on.
+1. Create the VM, NIC on the NAT network only, then use `virsh domdisplay
+   fw01` to get its VNC endpoint and drive the rest with a VNC client (or
+   `vncdotool`) since there's no serial/unattended path:
+   ```
+   virt-install --name fw01 --memory 1024 --vcpus 1 \
+     --disk pool=halcyon-lab,size=8,sparse=yes,bus=sata \
+     --network network=default,model=e1000 \
+     --cdrom /path/to/netgate-installer-v1.2-RELEASE-amd64.iso \
+     --os-variant freebsd13.0 --graphics vnc --noautoconsole
+   ```
 2. Work through the Netgate installer: accept the EULA, choose **Install pfSense
    CE** (Community Edition — no registration), accept the Auto/ZFS defaults. It
    downloads and installs CE, then reboots.
 3. After reboot, at the console say **no** to VLANs; if it prompts for interface
    assignment just accept whatever it offers — the config restore in step 5
    overrides all of it. Note the LAN IP it prints.
-4. Browse to that LAN IP (over `vmnet8`/the console-shown address); log in
+4. Browse to that LAN IP (reachable over the NAT network); log in
    `admin` / `pfsense`.
 5. **Diagnostics → Backup & Restore → Restore configuration** → upload
    `packer/pfsense/config.xml` → restore. pfSense reboots fully configured
-   (interfaces wan=em0/lan=em1/opt1=em2, DHCP, NAT, firewall rules).
-6. Shut the VM down and package it:
-   `vagrant package --base <vm-name> --output /mnt/halcyon-lab/packer-output/boxes/halcyon-pfsense.box`
-   then `vagrant box add halcyon/pfsense <that .box> --force`.
-
-Once step 2's base install is done and the VM is registered in VMware, steps 5–6
-are mechanical and can be handed off to be finished for you.
+   (interfaces wan=em0/lan=em1/opt1=em2, DHCP, NAT, firewall rules). This step
+   can be scripted with `curl` (CSRF-token login, then a multipart upload to
+   `/diag_backup.php`) once you have the admin session cookie.
+6. Shut the VM down, detach the NAT NIC, and attach the three lab NICs in
+   order — `lab-wan` (em0), `lab-lan` (em1), `lab-dmz` (em2):
+   ```
+   virsh detach-interface fw01 network --mac <nat-nic-mac> --config
+   virsh attach-interface fw01 network lab-wan --model e1000 --config
+   virsh attach-interface fw01 network lab-lan --model e1000 --config
+   virsh attach-interface fw01 network lab-dmz --model e1000 --config
+   virsh start fw01
+   ```
 
 ## Interface-order gotcha
 
 If after boot the zones look wrong (e.g. LAN IP on the WAN port), the NIC↔`emN`
 mapping came up in a different order. Fix it once from console **option 1
 (Assign Interfaces)**: set `WAN=em0`, `LAN=em1`, `OPT1(DMZ)=em2`, matching the
-Vagrantfile NIC order. Then re-restore `config.xml`.
+attach order above. Then re-restore `config.xml`.
 
 ## Login / password
 

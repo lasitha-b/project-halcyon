@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sanity-check that every host and service in the lab is up and reachable.
-# Run from a machine on the same host-only vmnet (from ATTACK, or from WSL2
-# on the Windows Workstation host - WSL2 can normally reach 10.20.10.0/24
-# through the Windows host's route to the VMware host-only adapter).
+# Run from the KVM host itself (it holds .1 on each isolated libvirt
+# network - lab-wan/lab-dmz/lab-lan - so it can reach every segment
+# directly) or from ATTACK for the segmentation-aware view.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -26,13 +26,13 @@ check() {
 echo "== Network reachability (host mgmt adapters) =="
 check "fw01 LAN gw (10.20.10.254) ping" ping -c1 -W2 10.20.10.254
 check "fw01 DMZ gw (172.20.1.254) ping" ping -c1 -W2 172.20.1.254
-check "fw01 WAN gw (203.0.113.254) ping" ping -c1 -W2 203.0.113.254
+check "fw01 WAN gw (192.168.50.254) ping" ping -c1 -W2 192.168.50.254
 check "DC01 (10.20.10.10) ping"   ping -c1 -W2 10.20.10.10
 check "SRV01 (10.20.10.20) ping"  ping -c1 -W2 10.20.10.20
 check "WS01 (10.20.10.31) ping"   ping -c1 -W2 10.20.10.31
 check "WS02 (10.20.10.32) ping"   ping -c1 -W2 10.20.10.32
 check "WEB01 (172.20.1.40) ping"  ping -c1 -W2 172.20.1.40
-check "ATTACK (203.0.113.66) ping" ping -c1 -W2 203.0.113.66
+check "ATTACK (192.168.50.66) ping" ping -c1 -W2 192.168.50.66
 
 echo "== Core services =="
 check "DC01 LDAP (389)"       bash -c "echo > /dev/tcp/10.20.10.10/389"
@@ -43,7 +43,7 @@ check "WEB01 app /healthz (direct)" curl -sf http://172.20.1.40/healthz
 
 echo "== Firewall segmentation (edge policy via fw01) =="
 # The attacker's only way in: the WAN port-forward to the web app.
-check "WAN->WEB01 via port-forward (203.0.113.254:80)" curl -sf http://203.0.113.254/healthz
+check "WAN->WEB01 via port-forward (192.168.50.254:80)" curl -sf http://192.168.50.254/healthz
 # The load-bearing control: WAN must NOT reach the internal LAN directly.
 # This check PASSES when the connection is refused/blocked (i.e. good policy).
 if timeout 4 bash -c "echo > /dev/tcp/10.20.10.10/389" 2>/dev/null; then

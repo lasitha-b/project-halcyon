@@ -25,13 +25,37 @@
 
 - name: Enable SQL Server + Windows mixed-mode authentication and set the sa password
   ansible.windows.win_shell: |
-    Import-Module 'SqlServer' -ErrorAction SilentlyContinue
-    $srv = New-Object Microsoft.SqlServer.Management.Smo.Server('localhost\SQLEXPRESS')
-    $srv.Settings.LoginMode = [Microsoft.SqlServer.Management.Smo.ServerLoginMode]::Mixed
-    $srv.Alter()
+    # Setting LoginMode via SMO ($srv.Alter()) was unreliable here (silently
+    # left LoginMode=1/Windows-only in some runs). This is the same registry
+    # key SSMS/SMO write under the hood - set it directly instead.
+    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer' -Name LoginMode -Value 2
+
+    # SQL Server Express ships with the TCP/IP protocol disabled (named
+    # pipes/shared memory only) - remote/network connections (incl. from
+    # ATTACK once pivoted) need TCP on the standard port 1433 explicitly
+    # enabled, same as toggling it on in SQL Server Configuration Manager.
+    $tcpPath = 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\MSSQL16.SQLEXPRESS\MSSQLServer\SuperSocketNetLib\Tcp'
+    Set-ItemProperty -Path $tcpPath -Name Enabled -Value 1
+    Get-ChildItem $tcpPath | Where-Object { $_.PSChildName -like 'IP*' } | ForEach-Object {
+      Set-ItemProperty -Path $_.PSPath -Name TcpPort -Value '1433'
+      Set-ItemProperty -Path $_.PSPath -Name TcpDynamicPorts -Value ''
+    }
+
     Restart-Service -Name 'MSSQL$SQLEXPRESS' -Force
-    Start-Sleep -Seconds 5
+
+    # SQL Express can take well over 5s to accept connections after a
+    # restart - poll instead of a fixed sleep, and fail loudly (not just a
+    # hardcoded changed_when) if it never comes up.
+    $ready = $false
+    for ($i = 0; $i -lt 24; $i++) {
+      Start-Sleep -Seconds 5
+      sqlcmd -S localhost\SQLEXPRESS -Q "SELECT 1" *> $null
+      if ($LASTEXITCODE -eq 0) { $ready = $true; break }
+    }
+    if (-not $ready) { throw "SQL Server did not come back up after mixed-mode restart" }
+
     sqlcmd -S localhost\SQLEXPRESS -Q "ALTER LOGIN sa WITH PASSWORD = '{{ halcyon_sa_mssql_password }}'; ALTER LOGIN sa ENABLE;"
+    if ($LASTEXITCODE -ne 0) { throw "Failed to set sa password/enable sa login" }
   changed_when: true
 
 - name: Create domain service account context for MSSQL engine (svc-mssql runs the service)
@@ -42,27 +66,52 @@
   changed_when: true
 
 - name: Grant svc-mssql SeImpersonatePrivilege (already default for LocalSystem-adjacent service accounts, explicit here for the potato-style privesc path)
+  # ntrights.exe (Server 2003 Resource Kit) doesn't exist on Server 2022;
+  # secedit is the modern way to edit user rights assignments.
   ansible.windows.win_shell: |
-    ntrights +r SeImpersonatePrivilege -u "{{ domain_netbios }}\svc-mssql"
+    $sid = (New-Object System.Security.Principal.NTAccount("{{ domain_netbios }}\svc-mssql")).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    $cfg = "$env:TEMP\secpol.cfg"
+    secedit /export /cfg $cfg /areas USER_RIGHTS | Out-Null
+    $content = @(Get-Content $cfg)
+    $found = $false
+    for ($i = 0; $i -lt $content.Length; $i++) {
+      if ($content[$i] -match '^SeImpersonatePrivilege\s*=\s*(.*)$') {
+        $found = $true
+        $existing = $Matches[1]
+        if ($existing -notmatch [regex]::Escape("*$sid")) {
+          $content[$i] = "SeImpersonatePrivilege = $existing,*$sid"
+        }
+      }
+    }
+    if (-not $found) { $content += "SeImpersonatePrivilege = *$sid" }
+    $content | Set-Content $cfg
+    secedit /configure /db "$env:TEMP\secedit.sdb" /cfg $cfg /areas USER_RIGHTS | Out-Null
   changed_when: true
-  ignore_errors: true
 
 - name: Enable xp_cmdshell (always-live path)
+  # Passing the password via -P on the command line is fragile: Windows
+  # PowerShell 5.1's native-argument passing can mangle shell-special
+  # characters (&, %, etc.) that a generated password may contain. sqlcmd
+  # natively reads SQLCMDPASSWORD instead, avoiding that entirely.
   ansible.windows.win_shell: |
-    sqlcmd -S localhost\SQLEXPRESS -U sa -P "{{ halcyon_sa_mssql_password }}" -Q "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;"
+    $env:SQLCMDPASSWORD = "{{ halcyon_sa_mssql_password }}"
+    sqlcmd -S localhost\SQLEXPRESS -U sa -Q "EXEC sp_configure 'show advanced options', 1; RECONFIGURE; EXEC sp_configure 'xp_cmdshell', 1; RECONFIGURE;"
   when: "'mssql_xp_cmdshell' in halcyon_live_paths"
   changed_when: true
 
 - name: Configure a linked server back to DC01 using svc-mssql's context (EXECUTE AS abuse path)
   ansible.windows.win_shell: |
-    sqlcmd -S localhost\SQLEXPRESS -U sa -P "{{ halcyon_sa_mssql_password }}" -Q "EXEC sp_addlinkedserver @server = N'DC01LINK', @srvproduct=N'', @provider=N'SQLNCLI', @datasrc=N'dc01.{{ domain_name }}'; EXEC sp_addlinkedsrvlogin @rmtsrvname=N'DC01LINK', @useself=N'True';"
+    $env:SQLCMDPASSWORD = "{{ halcyon_sa_mssql_password }}"
+    sqlcmd -S localhost\SQLEXPRESS -U sa -Q "EXEC sp_addlinkedserver @server = N'DC01LINK', @srvproduct=N'', @provider=N'SQLNCLI', @datasrc=N'dc01.{{ domain_name }}'; EXEC sp_addlinkedsrvlogin @rmtsrvname=N'DC01LINK', @useself=N'True';"
   when: "'mssql_linked_server' in halcyon_live_paths"
   changed_when: true
 
 - name: Create the CI deploy share referenced by WEB01's deploy.sh
   ansible.windows.win_shell: |
     New-Item -ItemType Directory -Path 'C:\Shares\Deploy' -Force | Out-Null
-    New-SmbShare -Name "deploy" -Path 'C:\Shares\Deploy' -FullAccess "{{ domain_netbios }}\svc-deploy","{{ domain_netbios }}\Domain Admins" -ErrorAction SilentlyContinue
+    if (-not (Get-SmbShare -Name "deploy" -ErrorAction SilentlyContinue)) {
+      New-SmbShare -Name "deploy" -Path 'C:\Shares\Deploy' -FullAccess "{{ domain_netbios }}\svc-deploy","{{ domain_netbios }}\Domain Admins"
+    }
   changed_when: true
 
 - name: Drop the first-domain-cred flag + a decoy release note in the deploy share

@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 # Project Halcyon — prove the pfSense edge policy from the ATTACKER's vantage.
 #
-# RUN THIS FROM THE ATTACK BOX (203.0.113.66), not from the VMware host. The
+# RUN THIS FROM THE ATTACK BOX (192.168.50.66), not from the KVM host. The
 # host holds a .1 management adapter on every vmnet, so it can reach all three
 # segments directly and CANNOT tell you whether the firewall is actually
 # enforcing anything. Only a host that sits behind the firewall's WAN side -
 # i.e. ATTACK - exercises the real policy.
 #
-#   scp scripts/verify-segmentation.sh kali@203.0.113.66:/tmp/
-#   ssh kali@203.0.113.66 'bash /tmp/verify-segmentation.sh'
+#   scp scripts/verify-segmentation.sh kali@192.168.50.66:/tmp/
+#   ssh kali@192.168.50.66 'bash /tmp/verify-segmentation.sh'
 #
 # Expected result on a correctly-segmented lab: all checks PASS. A "blocked"
 # check PASSES when the connection is refused/times out (that's the point).
 set -uo pipefail
 
 # Edge / target addresses (see docs/architecture.md "Network segmentation").
-FW_WAN="203.0.113.254"     # pfSense WAN IP (port-forward front door + no admin)
+FW_WAN="192.168.50.254"     # pfSense WAN IP (port-forward front door + no admin)
 WEB_DMZ="172.20.1.40"      # WEB01, only reachable via the port-forward
 DC_LAN="10.20.10.10"       # DC01, internal - must be unreachable from WAN
 SRV_LAN="10.20.10.20"      # SRV01/MSSQL, internal - must be unreachable from WAN
