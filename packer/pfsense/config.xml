@@ -50,6 +50,7 @@
 		     flaky throughput on virtualized e1000 NICs). -->
 		<disablesegmentationoffloading></disablesegmentationoffloading>
 		<disablelargereceiveoffloading></disablelargereceiveoffloading>
+		<disablechecksumoffloading></disablechecksumoffloading>
 		<powerd_ac_mode>hadp</powerd_ac_mode>
 		<bogons>
 			<interval>monthly</interval>
