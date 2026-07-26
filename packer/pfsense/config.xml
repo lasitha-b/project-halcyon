@@ -365,6 +365,38 @@
 		</rule>
 		<rule>
 			<id></id>
+			<tracker>1000000024</tracker>
+			<type>block</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<network>lan</network>
+				<port>5985</port>
+			</destination>
+			<descr><![CDATA[DMZ -> LAN WinRM (5985): deny - pivot is for AD/DNS/DB, not remote management]]></descr>
+		</rule>
+		<rule>
+			<id></id>
+			<tracker>1000000025</tracker>
+			<type>block</type>
+			<interface>opt1</interface>
+			<ipprotocol>inet</ipprotocol>
+			<protocol>tcp</protocol>
+			<source>
+				<network>opt1</network>
+			</source>
+			<destination>
+				<network>lan</network>
+				<port>5986</port>
+			</destination>
+			<descr><![CDATA[DMZ -> LAN WinRM-HTTPS (5986): deny - pivot is for AD/DNS/DB, not remote management]]></descr>
+		</rule>
+		<rule>
+			<id></id>
 			<tracker>1000000022</tracker>
 			<type>pass</type>
 			<interface>opt1</interface>
@@ -376,7 +408,7 @@
 			<destination>
 				<any></any>
 			</destination>
-			<descr><![CDATA[DMZ pivot: WEB01 -> any (AD/DB to LAN, reverse shell to WAN)]]></descr>
+			<descr><![CDATA[DMZ pivot: WEB01 -> any (AD/DB to LAN, reverse shell to WAN), except WinRM (blocked above)]]></descr>
 		</rule>
 		<rule>
 			<id></id>
