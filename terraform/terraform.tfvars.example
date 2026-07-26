@@ -1,0 +1,19 @@
+# Project Halcyon — AWS deployment path, example tfvars.
+# Copy to terraform.tfvars (gitignored) and fill in real values.
+
+region = "us-east-1"
+
+# Your own IP, NOT 0.0.0.0/0 - this is who can manage the range from
+# outside it (SSH to web01/attack for ops), not the in-lab attacker vantage.
+admin_cidr = "203.0.113.4/32"
+
+key_name        = "halcyon-lab"
+public_key_path = "~/.ssh/id_ed25519.pub"
+
+# Subscribe to the AWS Marketplace "Kali Linux" listing first (one-time,
+# manual - Terraform can't auto-subscribe to Marketplace products), then
+# copy the AMI ID it publishes for your region here.
+kali_ami_id = "ami-REPLACE-ME"
+
+budget_limit_usd   = "50"
+budget_alert_email = "you@example.com"

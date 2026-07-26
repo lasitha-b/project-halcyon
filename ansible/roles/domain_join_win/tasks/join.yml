@@ -21,3 +21,42 @@
     delay: 30
     timeout: 600
   when: join_result.reboot_required | default(false)
+
+# Local admin password: shared across WS01/WS02 only when the laps_absent_pth
+# path is live this deploy (that's the whole point of the vulnerability).
+# Lives here (not main.yml) so member_servers (SRV01) get it too, not just
+# clients - it was previously only reachable via the client-only play, which
+# left SRV01's Administrator account never rotated from its build default.
+- name: Set local Administrator password (shared, no LAPS)
+  ansible.windows.win_user:
+    name: Administrator
+    password: "{{ halcyon_local_admin_password }}"
+    state: present
+  when: "'laps_absent_pth' in halcyon_live_paths"
+
+- name: Set local Administrator password (unique per host, LAPS-like)
+  ansible.windows.win_user:
+    name: Administrator
+    password: "{{ halcyon_creds[inventory_hostname] | default(halcyon_local_admin_password + inventory_hostname) }}"
+    state: present
+  when: "'laps_absent_pth' not in halcyon_live_paths"
+
+- name: Switch connection identity off the bootstrap vagrant account
+  # From here on, use the just-rotated local Administrator instead of
+  # vagrant/vagrant - required before disabling vagrant below, and persists
+  # for every later play against this host in the same run (mssql, posture,
+  # main.yml's client-only tasks).
+  ansible.builtin.set_fact:
+    ansible_user: Administrator
+    ansible_password: >-
+      {{ halcyon_local_admin_password if ('laps_absent_pth' in halcyon_live_paths)
+         else (halcyon_creds[inventory_hostname] | default(halcyon_local_admin_password + inventory_hostname)) }}
+
+- name: Disable the bootstrap vagrant account (no longer needed past this point)
+  # inventory.yml's ansible_password comment calls this "bootstrap only;
+  # rotated by randomize role" - this is that rotation. Leaving it enabled
+  # with its known default password is a standing, undocumented local-admin
+  # backdoor into every member server/client (found live on SRV01).
+  ansible.windows.win_user:
+    name: vagrant
+    account_disabled: true

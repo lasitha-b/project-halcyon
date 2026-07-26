@@ -22,16 +22,21 @@ vulnerability paths are active on every deploy — see `docs/architecture.md` fo
   MSSQL misconfig, endpoint credential exposure.
 - Windows Defender AV **on** throughout — this is not an AV-off lab.
 
-## Deployment target: KVM only (for now)
+## Deployment targets: KVM (local) or AWS
 
-This repo currently supports **local KVM/libvirt only**. A Terraform-based AWS
-deployment path is planned as a separate future phase and does not exist yet —
-don't look for `terraform/` here.
-
-This is a **one-time deployment**, not a repeatable pipeline: the seven VMs are
+**Local KVM/libvirt** is the primary/reference deployment (below). This is a
+**one-time deployment**, not a repeatable pipeline: the seven VMs are
 built once (see "Building the VMs" below) and left running under libvirt. There
 is no snapshot/reset flow — if you need a fresh deployment, tear the VMs down
 and rebuild.
+
+**AWS** is also supported, via `terraform/` + `scripts/aws-deploy.sh` —
+see `docs/architecture-aws.md` for the topology and, importantly, the
+deliberate scope differences from the KVM version (no pfSense edge firewall,
+WS01/WS02 become Windows Server 2022 instead of real Windows 11 clients).
+This is a **paid, always-on environment** while running — use
+`scripts/aws-destroy.sh` when done; see `terraform/budget.tf` for a cost
+backstop alarm.
 
 ## Requirements
 
@@ -102,8 +107,24 @@ scripts/health.sh            # verify every host/service is reachable and correc
 scripts/verify-segmentation.sh   # run from ATTACK: confirm WAN can't reach LAN/DMZ directly
 ```
 
-See `docs/student-brief.md` for the in-lab starting point (what a tester is told) and
-`docs/architecture.md` for the full design rationale, topology, and vulnerability map.
+### AWS quick start
+
+```
+cp terraform/terraform.tfvars.example terraform/terraform.tfvars   # fill in real values
+scripts/aws-deploy.sh              # terraform apply, SSM tunnels, randomize + Ansible provisioning
+scripts/aws-health.sh              # verify instance status + services
+scripts/aws-verify-segmentation.sh # run from attack: confirm the Security Group boundary holds
+scripts/aws-destroy.sh             # tear down when done - this costs money while running
+```
+
+See `docs/architecture-aws.md` for the topology and documented scope
+differences from the KVM version before running this path.
+
+See `docs/student-brief.md` for the in-lab starting point (what a tester is told),
+`docs/architecture.md` for the full design rationale, topology, and vulnerability map, and
+`docs/attack-chain.md` for the complete stage-by-stage attack chain and vulnerability
+dossier (why each bug exists, which config produces it, how the stages chain together —
+operator-facing, static across deploys).
 The answer key is generated per-deploy at `docs/answer-key.md` (gitignored — it contains
 the randomized secrets and solution paths for this specific deployment).
 

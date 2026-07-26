@@ -21,9 +21,17 @@ ansible/inventory_discovered.yml
 # ISOs (too large, and licensed media)
 *.iso
 
+# Terraform (AWS deployment path)
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/terraform.tfvars
+terraform/*.tfplan
+
 # Editor / OS
 .DS_Store
 *.swp
+.obsidian/
 
 # Python
 __pycache__/

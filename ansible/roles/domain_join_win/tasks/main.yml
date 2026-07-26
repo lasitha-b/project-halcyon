@@ -1,22 +1,9 @@
 ---
 - name: Domain-join step (shared with the early member-server join play)
+  # Also sets the local Administrator password and disables the bootstrap
+  # vagrant account - see join.yml. Idempotent no-op if this host already
+  # ran it via the earlier member_servers:clients play.
   ansible.builtin.include_tasks: join.yml
-
-# Local admin password: shared across WS01/WS02 only when the laps_absent_pth
-# path is live this deploy (that's the whole point of the vulnerability).
-- name: Set local Administrator password (shared, no LAPS)
-  ansible.windows.win_user:
-    name: Administrator
-    password: "{{ halcyon_local_admin_password }}"
-    state: present
-  when: "'laps_absent_pth' in halcyon_live_paths"
-
-- name: Set local Administrator password (unique per host, LAPS-like)
-  ansible.windows.win_user:
-    name: Administrator
-    password: "{{ halcyon_creds[inventory_hostname] | default(halcyon_local_admin_password + inventory_hostname) }}"
-    state: present
-  when: "'laps_absent_pth' not in halcyon_live_paths"
 
 - name: Seed the assigned staff user's local session (simulated interactive logon)
   ansible.windows.win_shell: |
