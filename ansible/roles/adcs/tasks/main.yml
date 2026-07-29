@@ -25,13 +25,19 @@
 
 - name: Install web enrollment role (needed for ESC8)
   ansible.windows.win_shell: |
-    Install-AdcsWebEnrollment -Force
+    Import-Module WebAdministration
+    if (-not (Test-Path 'IIS:\Sites\Default Web Site\CertSrv')) {
+      Install-AdcsWebEnrollment -Force
+    }
   when: "'adcs_esc8_relay' in halcyon_live_paths"
   changed_when: true
 
 - name: Force HTTP-only web enrollment (no HTTPS/EPA) for ESC8
+  # RequireSSLForEnrollment isn't a CertSvc registry setting - "SSL required"
+  # on the CertSrv web enrollment pages is an IIS virtual-directory setting.
   ansible.windows.win_shell: |
-    Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Cryptography\CertSvc' -Name 'RequireSSLForEnrollment' -Value 0 -ErrorAction SilentlyContinue
+    Import-Module WebAdministration
+    Set-WebConfiguration -Filter /system.webServer/security/access -PSPath 'IIS:\Sites\Default Web Site\CertSrv' -Value @{sslFlags="None"}
   when: "'adcs_esc8_relay' in halcyon_live_paths"
   changed_when: true
 

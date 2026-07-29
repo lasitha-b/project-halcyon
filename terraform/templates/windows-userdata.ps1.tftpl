@@ -1,0 +1,38 @@
+<powershell>
+# Project Halcyon — AWS deployment path, Windows bootstrap.
+#
+# Replaces autounattend.xml's job on KVM: get a known local bootstrap
+# account and WinRM up before Ansible ever connects. Runs once via
+# EC2Launch on first boot.
+#
+# Deliberately recreates the KVM lab's "vagrant" bootstrap-user pattern
+# (ansible/inventory.yml's windows group: ansible_user: vagrant) so that
+# ad_forest/domain_join_win need zero changes - they already handle "vagrant
+# is just the bootstrap account, Administrator becomes the real domain
+# admin" (see ansible/roles/ad_forest/tasks/main.yml). The password here is
+# a Terraform random_password value (ec2.tf), not the KVM version's static
+# weak default.
+
+$ErrorActionPreference = "Stop"
+
+$password = "${bootstrap_password}"
+$secure   = ConvertTo-SecureString $password -AsPlainText -Force
+
+if (-not (Get-LocalUser -Name vagrant -ErrorAction SilentlyContinue)) {
+    New-LocalUser -Name vagrant -Password $secure -PasswordNeverExpires -AccountNeverExpires
+} else {
+    Set-LocalUser -Name vagrant -Password $secure
+}
+Add-LocalGroupMember -Group "Administrators" -Member vagrant -ErrorAction SilentlyContinue
+
+# Force WinRM up rather than trusting AMI defaults, which vary by AMI build.
+Enable-PSRemoting -Force -SkipNetworkProfileCheck
+winrm quickconfig -quiet
+winrm set winrm/config/service '@{AllowUnencrypted="true"}'
+winrm set winrm/config/service/auth '@{Basic="true"}'
+winrm set winrm/config/client/auth '@{Basic="true"}'
+
+New-NetFirewallRule -DisplayName "WinRM-HTTP-Ansible" -Direction Inbound -Protocol TCP -LocalPort 5985 -Action Allow -ErrorAction SilentlyContinue
+
+Restart-Service WinRM
+</powershell>

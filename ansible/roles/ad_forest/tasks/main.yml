@@ -14,6 +14,18 @@
     state: present
   register: dc_feature_install
 
+- name: Set a strong password on the built-in Administrator account
+  # Install-ADDSForest refuses to promote if the local Administrator (RID
+  # 500) has a blank/weak password, since that account becomes the domain
+  # Administrator post-promotion. The autounattend.xml answer file only sets
+  # a password for the "vagrant" bootstrap account, not this one.
+  ansible.windows.win_user:
+    name: Administrator
+    password: "{{ halcyon_local_admin_password }}"
+    state: present
+    account_disabled: false
+    password_never_expires: true
+
 - name: Promote to new forest (idempotent - noop if already a DC)
   microsoft.ad.domain:
     dns_domain_name: "{{ domain_name }}"
@@ -28,6 +40,20 @@
     delay: 30
     timeout: 600
   when: forest_promo.reboot_required | default(false)
+
+- name: Switch connection identity to the domain Administrator
+  # Post-promotion, the bootstrap "vagrant" local account (used by
+  # ansible/inventory.yml's ansible_user default) is absorbed into the
+  # domain as an ordinary, non-privileged domain user - it is NOT a member
+  # of Domain Admins/Enterprise Admins. Only the built-in Administrator
+  # (RID 500) becomes the domain Administrator automatically. Enterprise CA
+  # install (adcs role) and AD ACL/delegation work (ad_identities role)
+  # both need Enterprise/Domain Admin rights to write into the Configuration
+  # NC, so switch credentials here for the rest of this play.
+  ansible.builtin.set_fact:
+    ansible_user: Administrator
+    ansible_password: "{{ halcyon_local_admin_password }}"
+  when: forest_promo is succeeded
 
 - name: Create OU structure
   microsoft.ad.ou:
@@ -45,14 +71,14 @@
     path: "OU=Staff,OU=Halcyon,{{ domain_dn }}"
     description: "{{ item.desc | default('') }}"
     state: present
-  loop: "{{ groups | rejectattr('builtin', 'defined') | list }}"
+  loop: "{{ security_groups | rejectattr('builtin', 'defined') | list }}"
 
 - name: Create Domain-Admins-only confidential share for the DA flag
   ansible.windows.win_shell: |
     New-Item -ItemType Directory -Path 'C:\Shares\Confidential' -Force | Out-Null
     New-SmbShare -Name "confidential" -Path 'C:\Shares\Confidential' -FullAccess "{{ domain_netbios }}\Domain Admins" -ErrorAction SilentlyContinue
-    icacls 'C:\Shares\Confidential' /inheritance:r /grant "{{ domain_netbios }}\Domain Admins:(OI)(CI)F" /grant "SYSTEM:(OI)(CI)F"
     Set-Content -Path 'C:\Shares\Confidential\flag_domain_admin.txt' -Value "{{ halcyon_flags.domain_admin }}"
+    icacls 'C:\Shares\Confidential' /inheritance:r /grant "{{ domain_netbios }}\Domain Admins:(OI)(CI)F" /grant "SYSTEM:(OI)(CI)F"
   changed_when: true
 
 - name: Disable LLMNR/NBT-NS per posture toggle is handled in posture role (no-op placeholder)

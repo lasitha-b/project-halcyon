@@ -1,0 +1,21 @@
+#cloud-config
+# Project Halcyon — AWS deployment path, web01 bootstrap.
+#
+# Replaces the KVM lab's cloud-init NoCloud seed. Creates the same
+# "vagrant" bootstrap user ansible/inventory.yml's linux group expects, but
+# uses KEY-based SSH (via the Terraform-managed key pair already attached
+# to the instance) rather than the KVM inventory's password-SSH-with-
+# PubkeyAuthentication=no pattern - AWS Ubuntu AMIs default to key-only SSH
+# and fighting that is more friction than just using keys here. This only
+# affects the new AWS-specific inventory (ansible/generated/inventory_aws.yml)
+# - ansible/inventory.yml is untouched.
+
+users:
+  - name: vagrant
+    groups: sudo
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    ssh_authorized_keys:
+      - ${public_key}
+
+package_update: true

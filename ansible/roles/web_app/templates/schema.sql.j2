@@ -47,3 +47,9 @@ INSERT INTO shipments (reference, destination, status, ops_team, internal_notes)
 
 INSERT INTO integrations (name, ad_bind_dn, ad_bind_password, notes) VALUES
     ('legacy-ad-sync', 'CN=Web Bind Service,OU=Service Accounts,OU=Halcyon,{{ domain_dn }}', '{{ halcyon_creds["svc-webbind"] }}', 'nightly LDAP sync, do not disable');
+
+-- This script runs as the postgres superuser, so the tables above are owned
+-- by postgres. The app authenticates as the halcyon role, which needs
+-- explicit grants or every query 500s with "permission denied for table ...".
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO halcyon;
+GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO halcyon;

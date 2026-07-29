@@ -1,12 +1,13 @@
 ---
 # Project Halcyon — top-level playbook.
-# Run explicitly after `vagrant up` (which only boots the VMs - see
-# Vagrantfile), normally via scripts/deploy.sh:
+# Run explicitly after all seven VMs are built and running under
+# libvirt/KVM (virt-install - see docs/architecture.md), normally via
+# scripts/deploy.sh:
 #   ansible-playbook -i ansible/inventory.yml ansible/site.yml
 # The `attacker` group (Kali) is intentionally never targeted here - it's the
 # tester's own box, not a provisioned lab target.
 
-- name: Wait for guests to accept connections (right after vagrant up)
+- name: Wait for guests to accept connections
   hosts: windows:linux
   gather_facts: false
   tasks:
@@ -23,6 +24,27 @@
   roles:
     - randomize
 
+- name: Set correct Windows computer names
+  # Each Windows VM is installed fresh via autounattend.xml (no golden-image
+  # clone/rename step exists in this KVM workflow), so it boots with
+  # whatever name Windows Setup auto-generated (e.g. WIN-XXXXXXXXXXX) unless
+  # something else renames it - do that here, before AD forest
+  # promotion/domain join, since a domain controller especially needs its
+  # real name from the start (renaming a promoted DC is a much bigger
+  # operation than renaming first).
+  hosts: windows
+  gather_facts: false
+  tasks:
+    - name: Rename computer to match inventory hostname
+      ansible.windows.win_hostname:
+        name: "{{ inventory_hostname }}"
+      register: rename_result
+
+    - name: Reboot if renamed
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+      when: rename_result.reboot_required
+
 - name: Domain controller - forest, DNS, AD CS
   hosts: domain_controllers
   vars_files:
@@ -30,6 +52,23 @@
   roles:
     - ad_forest
     - adcs
+
+- name: Join member servers + clients to the domain
+  # Must happen before ad_identities (next play) touches SRV01's AD computer
+  # object (unconstrained delegation, etc.) - that object doesn't exist until
+  # SRV01 has actually joined. Clients get the same join step again in their
+  # own play below via the full domain_join_win role (idempotent no-op here).
+  hosts: member_servers:clients
+  vars_files:
+    - group_vars/secrets_seed.yml
+  roles:
+    - { role: domain_join_win, tasks_from: join.yml }
+
+- name: Domain controller - AD identities/ACLs (needs member servers joined)
+  hosts: domain_controllers
+  vars_files:
+    - group_vars/secrets_seed.yml
+  roles:
     - ad_identities
     - posture
 

@@ -29,14 +29,14 @@
   ansible.builtin.template:
     src: schema.sql.j2
     dest: /tmp/halcyon_schema.sql
-    mode: "0600"
+    mode: "0644" # must be readable by postgres for the next task
 
 - name: Load schema + seed data
   become: true
   become_user: postgres
-  community.postgresql.postgresql_query:
+  community.postgresql.postgresql_script:
     db: halcyon
-    path_to_script: /tmp/halcyon_schema.sql
+    path: /tmp/halcyon_schema.sql
 
 - name: Remove the rendered schema temp file
   ansible.builtin.file:
@@ -72,6 +72,15 @@
   ansible.builtin.pip:
     requirements: /var/www/intranet/requirements.txt
     virtualenv: /var/www/intranet/venv
+
+- name: Deploy app environment file (DSN + flask secret)
+  ansible.builtin.template:
+    src: halcyon-webapp.env.j2
+    dest: /etc/default/halcyon-webapp
+    mode: "0640"
+    owner: root
+    group: www-data
+  notify: restart webapp
 
 - name: Deploy systemd unit for the app (gunicorn)
   ansible.builtin.template:
@@ -141,5 +150,7 @@
     path: /etc/default/halcyon-webapp
     create: true
     line: "HALCYON_LIVE_PATHS=\"{{ halcyon_live_paths | join(' ') }}\""
-    mode: "0644"
+    owner: root
+    group: www-data
+    mode: "0640"
   notify: restart webapp

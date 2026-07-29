@@ -33,14 +33,18 @@
 # --- Kerberoasting: register an SPN on svc-mssql (always-live path) ---
 - name: Register MSSQL SPNs on svc-mssql (kerberoastable)
   ansible.windows.win_shell: |
-    setspn -A MSSQLSvc/srv01.{{ domain_name }}:1433 {{ domain_netbios }}\svc-mssql
-    setspn -A MSSQLSvc/srv01.{{ domain_name }} {{ domain_netbios }}\svc-mssql
+    $u = Get-ADUser svc-mssql -Properties ServicePrincipalName
+    $spns = @("MSSQLSvc/srv01.{{ domain_name }}:1433","MSSQLSvc/srv01.{{ domain_name }}")
+    $missing = $spns | Where-Object { $u.ServicePrincipalName -notcontains $_ }
+    if ($missing) { Set-ADUser -Identity svc-mssql -Add @{servicePrincipalName = $missing} }
   when: "'kerberoast_svc_mssql' in halcyon_live_paths"
   changed_when: true
 
 - name: Register SPN on svc-webbind (secondary kerberoast target)
   ansible.windows.win_shell: |
-    setspn -A HTTP/intranet.{{ domain_name }} {{ domain_netbios }}\svc-webbind
+    $u = Get-ADUser svc-webbind -Properties ServicePrincipalName
+    $spn = "HTTP/intranet.{{ domain_name }}"
+    if ($u.ServicePrincipalName -notcontains $spn) { Set-ADUser -Identity svc-webbind -Add @{servicePrincipalName = $spn} }
   when: "'kerberoast_svc_mssql' in halcyon_live_paths"  # webbind SPN rides along with the same category toggle
   changed_when: true
 
@@ -107,6 +111,7 @@
 - name: Leave a decoy credential hint in svc-scan's description (dead end)
   microsoft.ad.user:
     name: svc-scan
+    path: "OU=Service Accounts,OU=Halcyon,{{ domain_dn }}"
     description: "temp pw Halcyon2019! - CHANGE ME (ticket #4471, unresolved)"
 
 # SYSVOL is world-readable to Domain Users by default (\\{{ domain_name }}\SYSVOL),
