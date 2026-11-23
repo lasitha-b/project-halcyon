@@ -28,6 +28,10 @@
     dest: /etc/krb5.conf
     mode: "0644"
 
+- name: Set the hostname to web01 (the build seed named it web01-base)
+  ansible.builtin.hostname:
+    name: web01
+
 - name: Join the domain via realm (using svc-webbind as the join account)
   ansible.builtin.expect:
     command: "realm join -U svc-webbind {{ domain_name }}"

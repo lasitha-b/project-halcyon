@@ -35,7 +35,7 @@
   ansible.windows.win_shell: |
     $u = Get-ADUser svc-mssql -Properties ServicePrincipalName
     $spns = @("MSSQLSvc/srv01.{{ domain_name }}:1433","MSSQLSvc/srv01.{{ domain_name }}")
-    $missing = $spns | Where-Object { $u.ServicePrincipalName -notcontains $_ }
+    [string[]]$missing = $spns | Where-Object { $u.ServicePrincipalName -notcontains $_ }
     if ($missing) { Set-ADUser -Identity svc-mssql -Add @{servicePrincipalName = $missing} }
   when: "'kerberoast_svc_mssql' in halcyon_live_paths"
   changed_when: true
@@ -46,6 +46,21 @@
     $spn = "HTTP/intranet.{{ domain_name }}"
     if ($u.ServicePrincipalName -notcontains $spn) { Set-ADUser -Identity svc-webbind -Add @{servicePrincipalName = $spn} }
   when: "'kerberoast_svc_mssql' in halcyon_live_paths"  # webbind SPN rides along with the same category toggle
+  changed_when: true
+
+- name: Pre-stage the WEB01 computer account and delegate it to svc-webbind
+  # A plain user joining via ms-DS-MachineAccountQuota cannot set the
+  # userAccountControl flags adcli writes (CONSTRAINT_ATT_TYPE on join), so
+  # create the object here and give svc-webbind full control of it instead.
+  ansible.windows.win_shell: |
+    $ou = "CN=Computers,{{ domain_dn }}"
+    if (-not (Get-ADComputer -Filter "Name -eq 'WEB01'")) { New-ADComputer -Name WEB01 -SamAccountName 'WEB01$' -Path $ou -Enabled $true }
+    $c = Get-ADComputer WEB01
+    $sid = (Get-ADUser svc-webbind).SID
+    $acl = Get-Acl -Path "AD:$($c.DistinguishedName)"
+    $rule = New-Object System.DirectoryServices.ActiveDirectoryAccessRule($sid, 'GenericAll', 'Allow')
+    $acl.AddAccessRule($rule)
+    Set-Acl -Path "AD:$($c.DistinguishedName)" -AclObject $acl
   changed_when: true
 
 # --- AS-REP roasting: disable Kerberos preauth on svc-deploy ---

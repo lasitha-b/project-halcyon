@@ -35,7 +35,7 @@
   become: true
   become_user: postgres
   community.postgresql.postgresql_script:
-    db: halcyon
+    login_db: halcyon
     path: /tmp/halcyon_schema.sql
 
 - name: Remove the rendered schema temp file
@@ -119,6 +119,7 @@
   block:
     - name: Init a throwaway git repo in the web root with the vulnerable config committed
       ansible.builtin.shell: |
+        git config --global --add safe.directory /var/www/intranet
         cd /var/www/intranet
         git init -q
         git config user.email "ci@halcyon.local"
